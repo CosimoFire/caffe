@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quanto hai pagato il caffè?</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Libre+Franklin:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/radar.css">
+<style>
+  /* Controlli del calcolatore */
+  .c-form { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr); gap: 12px; margin: 22px 0 0; }
+  [hidden] { display: none !important; }
+  .c-field label { display: block; font-size: 12px; font-weight: 600; color: var(--ink-2); margin: 0 0 4px; }
+  .c-input { position: relative; }
+  .c-form input, .c-form select {
+    width: 100%; font: 500 16px/1.2 var(--sans); color: var(--ink);
+    background: var(--tip-bg); border: 1px solid var(--grey-light); border-radius: 2px;
+    padding: 10px 12px; appearance: none; -webkit-appearance: none;
+    font-variant-numeric: tabular-nums;
+  }
+  .c-form input { padding-right: 30px; }
+  .c-form select {
+    padding-right: 32px;
+    background-image: linear-gradient(45deg, transparent 50%, var(--ink-2) 50%), linear-gradient(135deg, var(--ink-2) 50%, transparent 50%);
+    background-position: calc(100% - 17px) 50%, calc(100% - 12px) 50%;
+    background-size: 5px 5px; background-repeat: no-repeat;
+  }
+  .c-form input:focus, .c-form select:focus { outline: 2px solid var(--blue); outline-offset: -1px; border-color: var(--blue); }
+  .c-form input::placeholder { color: var(--grey-3); font-style: italic; opacity: 1; }
+  .c-form input.is-needed { border-color: var(--blue); box-shadow: 0 0 0 2px var(--blue-5); }
+  .c-euro { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); color: var(--ink-2); font-size: 16px; pointer-events: none; }
+  .c-err { font-size: 13px; color: var(--red); margin: 6px 0 0; min-height: 0; }
+  .c-err:empty { display: none; }
+  .r-big__num.is-up { color: var(--red); }
+  .r-big__num.is-down { color: var(--blue); }
+  .cup .cup-line { fill: none; stroke: var(--ink); stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+  .cup .cup-steam { fill: none; stroke: var(--ink-2); stroke-width: 1.2; stroke-linecap: round; }
+  .cup .cup-body { stroke: var(--ink); stroke-width: 1.4; stroke-linejoin: round; }
+  .dot { stroke: var(--bg); stroke-width: 1; }
+  .dot--stale { stroke-width: 1.5; }
+  .you-line { stroke-width: 1.5; }
+  .sw--grey { background: var(--grey-4); border-radius: 50%; }
+  .sw--sel { background: var(--blue); border-radius: 50%; }
+  .sw--ring-grey { border-radius: 50%; border: 1.5px solid var(--grey-3); background: var(--bg); }
+  .sw--line { width: 10px; height: 8px; border-radius: 0; background: var(--red); clip-path: polygon(50% 0, 100% 100%, 0 100%); }
+  @media (max-width: 459px) { .c-form { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<main class="radar" id="app">
+  <h1 class="r-title"><span id="title1">Un caffè al bar costa in media 1,30 euro</span><span>E il tuo?</span></h1>
+  <p class="r-sub" id="sub">Inserisci il prezzo dell'espresso al banco e scegli la provincia: lo confrontiamo con i prezzi rilevati dall'Osservatorio prezzi del ministero delle Imprese a settembre 2026.</p>
+
+  <form class="c-form" id="form" novalidate>
+    <div class="c-field">
+      <label for="price">Quanto hai pagato? (es. 1,20)</label>
+      <div class="c-input">
+        <input id="price" class="is-needed" inputmode="decimal" autocomplete="off" placeholder="Scrivi il prezzo" aria-describedby="err">
+        <span class="c-euro">€</span>
+      </div>
+    </div>
+    <div class="c-field">
+      <label for="prov">Provincia</label>
+      <select id="prov"><option value="">Scegli la provincia</option></select>
+    </div>
+  </form>
+  <p class="c-err" id="err" role="alert"></p>
+
+  <div class="r-big" id="big">
+    <div class="r-big__num" id="bigNum">1,30<span class="r-big__unit"> €</span></div>
+    <div class="r-big__label" id="bigLabel">prezzo medio di un espresso al bar nelle province rilevate a settembre 2026</div>
+  </div>
+
+  <section class="r-chart" id="rangeChart" hidden>
+    <p class="r-chart__head" id="rangeHead"></p>
+    <p class="r-chart__sub" id="rangeSub"></p>
+    <div id="rangeSvg"></div>
+  </section>
+
+  <section class="r-chart" id="dotChart">
+    <p class="r-chart__head">Il prezzo medio nelle province</p>
+    <p class="r-chart__sub">Ogni punto è una provincia, posizionato sul prezzo medio di un espresso al banco. Passa sopra un punto per i dettagli.</p>
+    <div id="dotSvg"></div>
+    <div class="r-key" id="dotKey">
+      <span><i class="sw sw--grey"></i>Provincia</span>
+      <span id="keySel" hidden><i class="sw sw--sel"></i><b id="keySelName"></b></span>
+      <span id="keyYou" hidden><i class="sw sw--line"></i>Il tuo caffè</span>
+      <span><i class="sw sw--ring-grey"></i>Dato non aggiornato</span>
+    </div>
+    <p class="r-note" id="note"></p>
+  </section>
+
+  <footer class="r-foot">
+    <span>Fonte: Osservatorio prezzi Mimit, "Caffè espresso al bar (1 pz)"</span>
+    <span>Elaborazione Radar – QN</span>
+  </footer>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+<script src="../assets/radar.js"></script>
+<script>
+(function () {
+  "use strict";
+  var MESI = Radar.timeLocale ? ["gennaio","febbraio","marzo","aprile","maggio","giugno","luglio","agosto","settembre","ottobre","novembre","dicembre"] : [];
+  var ad = function (n) { return (/^[AEIOUaeiou]/.test(n) ? "ad " : "a ") + n; };
+  var eur = function (v) { return Radar.fmt(v, 2) + " €"; };
+  var app = document.getElementById("app");
+
+  Radar.loadCSV("../data/caffe-province.csv").then(function (rows) {
+    var data = rows.map(function (r) {
+      return { p: r.provincia, a: +r.anno, m: +r.mese, min: Radar.num(r.minimo), max: Radar.num(r.massimo), avg: Radar.num(r.media) };
+    });
+    // Mese di riferimento = il più recente presente nei dati
+    var ref = d3.max(data, function (d) { return d.a * 100 + d.m; });
+    var refA = Math.floor(ref / 100), refM = ref % 100, refLabel = MESI[refM - 1] + " " + refA;
+    data.forEach(function (d) { d.stale = (d.a * 100 + d.m) !== ref; });
+    var current = data.filter(function (d) { return !d.stale; });
+    var ranked = current.slice().sort(function (a, b) { return b.avg - a.avg; });
+    ranked.forEach(function (d) { d.rank = ranked.filter(function (x) { return x.avg > d.avg; }).length + 1; });
+    var naz = d3.mean(current, function (d) { return d.avg; });
+    var nazR = Math.round(naz * 100) / 100;
+    var cheapest = ranked[ranked.length - 1], dearest = ranked[0];
+
+    // Testi calcolati dai dati
+    document.getElementById("title1").textContent = "Un caffè al bar costa in media " + Radar.fmt(nazR, 2) + " euro";
+    document.getElementById("sub").textContent = "Inserisci il prezzo dell'espresso al banco e scegli la provincia: lo confrontiamo con i prezzi rilevati dall'Osservatorio prezzi del ministero delle Imprese a " + refLabel + ".";
+    var stale = data.filter(function (d) { return d.stale; });
+    document.getElementById("note").textContent =
+      "Media semplice delle " + current.length + " province con il dato di " + refLabel + ": " + eur(nazR) + ". " +
+      (stale.length ? "Per " + stale.map(function (d) { return d.p + " (" + MESI[d.m - 1] + " " + d.a + ")"; }).join(", ") + " è disponibile solo un dato più vecchio. " : "") +
+      "L'Osservatorio rileva " + data.length + " province su 107.";
+
+    var sel = d3.select("#prov");
+    data.forEach(function (d, i) { sel.append("option").attr("value", i).text(d.p); });
+
+    var state = { price: null, prov: null, first: true };
+
+    // ---------- Big number ----------
+    function setBig(phase) {
+      var num = d3.select("#bigNum"), lab = document.getElementById("bigLabel");
+      num.classed("is-up", false).classed("is-down", false);
+      if (state.price == null || state.prov == null) {
+        var only = state.prov;
+        num.html('<span class="v"></span><span class="r-big__unit"> €</span>');
+        Radar.countUp(num.select(".v"), only ? only.avg : nazR, function (v) { return Radar.fmt(v, 2); }, phase || "static");
+        lab.textContent = only
+          ? "prezzo medio di un espresso al bar " + ad(only.p) + ". Scrivi quanto hai pagato per fare il confronto"
+          : "prezzo medio di un espresso al bar nelle " + current.length + " province rilevate a " + refLabel +
+            (state.price != null ? ". Scegli la provincia per fare il confronto" : "");
+        return;
+      }
+      var d = state.prov, diff = Math.round((state.price - d.avg) * 100) / 100, rel = diff / d.avg * 100;
+      if (Math.abs(diff) < 0.005) {
+        num.html("In media");
+        lab.textContent = "hai pagato esattamente il prezzo medio di " + d.p + " (" + eur(d.avg) + ")";
+        return;
+      }
+      num.classed(diff > 0 ? "is-up" : "is-down", true)
+        .html((diff > 0 ? "+" : "−") + Radar.fmt(Math.abs(diff), 2) + '<span class="r-big__unit"> €</span>');
+      var pctTxt = (diff > 0 ? "+" : "−") + Radar.fmt(Math.abs(rel), 0) + "%";
+      var extra = state.price > d.max ? ". È più del prezzo più alto rilevato in provincia (" + eur(d.max) + ")"
+        : state.price < d.min ? ". È meno del prezzo più basso rilevato in provincia (" + eur(d.min) + ")" : "";
+      lab.textContent = (diff > 0 ? "in più" : "in meno") + " rispetto alla media di " + d.p + ", che è " + eur(d.avg) + " (" + pctTxt + ")" + extra;
+    }
+
+    // ---------- Tazzina (SVG) ----------
+    function cup(g, fill) {
+      g.attr("class", "cup");
+      g.append("path").attr("class", "cup-steam").attr("d", "M-3.5,-24c-1.5,1.6 1.5,3 0,4.8M1,-24c-1.5,1.6 1.5,3 0,4.8");
+      g.append("ellipse").attr("class", "cup-line").attr("cx", 0).attr("cy", -1.6).attr("rx", 12.5).attr("ry", 2.6).style("fill", "var(--tip-bg)");
+      g.append("path").attr("class", "cup-body").attr("d", "M-9,-17.6h18v5.5c0,5.2 -4,9 -9,9s-9,-3.8 -9,-9z").style("fill", "var(--tip-bg)");
+      g.append("path").attr("d", "M-7.7,-15.6h15.4v3.5c0,4.2 -3.4,7.4 -7.7,7.4s-7.7,-3.2 -7.7,-7.4z").style("fill", fill);
+      g.append("path").attr("class", "cup-line").attr("d", "M9,-15.3h1.8a3,3 0 0 1 0,6H8.3");
+      return g;
+    }
+
+    // ---------- Grafico 1: la tua provincia ----------
+    function drawRange(width, phase) {
+      var box = d3.select("#rangeSvg"); box.selectAll("*").remove();
+      var d = state.prov, p = state.price;
+      if (!d) return;
+      var m = { t: 46, r: 14, b: 26, l: 14 }, h = 104, iw = width - m.l - m.r;
+      var lo = Math.min(d.min, p == null ? d.min : p, d.avg) - 0.08, hi = Math.max(d.max, p == null ? d.max : p) + 0.08;
+      var x = d3.scaleLinear().domain([lo, hi]).range([0, iw]);
+      var svg = box.append("svg").attr("width", width).attr("height", h)
+        .attr("role", "img").attr("aria-label", "Il prezzo " + ad(d.p) + " va da " + eur(d.min) + " a " + eur(d.max) + ", media " + eur(d.avg) + (p != null ? "; il tuo caffè: " + eur(p) : ""));
+      var g = svg.append("g").attr("transform", "translate(" + m.l + "," + m.t + ")");
+      var ty = 22;
+      g.append("line").attr("x1", 0).attr("x2", iw).attr("y1", ty).attr("y2", ty).style("stroke", "var(--rule)").attr("stroke-width", 6).attr("stroke-linecap", "round");
+      var bar = g.append("rect").attr("y", ty - 4).attr("height", 8).attr("rx", 2).style("fill", "var(--blue-5)");
+      Radar.enter(bar, phase,
+        function (s) { s.attr("x", x(d.avg)).attr("width", 0); },
+        function (s) { s.attr("x", x(d.min)).attr("width", Math.max(0, x(d.max) - x(d.min))); });
+      g.append("line").attr("x1", x(d.avg)).attr("x2", x(d.avg)).attr("y1", ty - 10).attr("y2", ty + 10).style("stroke", "var(--blue)").attr("stroke-width", 2);
+
+      var narrow = Radar.isNarrow(width);
+      var labs = [
+        { x: x(d.min), t: (narrow ? "" : "min ") + eur(d.min), a: "middle" },
+        { x: x(d.avg), t: "media " + eur(d.avg), a: "middle", strong: true },
+        { x: x(d.max), t: (narrow ? "" : "max ") + eur(d.max), a: "middle" }
+      ];
+      // evita sovrapposizioni: la media vince sulle etichette vicine
+      var minGap = narrow ? 62 : 76;
+      labs.forEach(function (l) {
+        if (!l.strong && Math.abs(l.x - labs[1].x) < minGap) l.hide = true;
+      });
+      if (!labs[0].hide && !labs[2].hide && labs[2].x - labs[0].x < minGap) labs[2].hide = true;
+      g.selectAll(".tick-label").data(labs.filter(function (l) { return !l.hide; })).join("text")
+        .attr("class", function (l) { return l.strong ? "val-label" : "tick-label"; })
+        .attr("x", function (l) { return Math.max(24, Math.min(iw - 24, l.x)); }).attr("y", ty + 26)
+        .attr("text-anchor", "middle").text(function (l) { return l.t; });
+
+      if (p == null) {
+        g.append("text").attr("class", "tick-label").attr("x", iw / 2).attr("y", -22).attr("text-anchor", "middle")
+          .style("font-style", "italic").text(narrow ? "Scrivi il prezzo pagato per il confronto" : "Scrivi il prezzo che hai pagato per vedere dove si colloca il tuo caffè");
+      }
+      if (p != null) {
+        var up = p > d.avg + 0.004, down = p < d.avg - 0.004;
+        var fill = up ? "var(--red)" : down ? "var(--blue)" : "var(--grey-3)";
+        var cg = g.append("g");
+        Radar.enter(cg, phase,
+          function (s) { s.attr("transform", "translate(" + x(d.avg) + "," + (ty + 1) + ")").style("opacity", 0); },
+          function (s) { s.attr("transform", "translate(" + x(p) + "," + (ty + 1) + ")").style("opacity", 1); });
+        cup(cg, fill);
+        var lx = Math.max(40, Math.min(iw - 40, x(p)));
+        var lt = g.append("text").attr("class", "series-label").attr("x", lx).attr("y", -30).attr("text-anchor", "middle")
+          .text("Il tuo caffè: " + eur(p));
+        Radar.enter(lt, phase, function (s) { s.style("opacity", 0); }, function (s) { s.style("opacity", 1); });
+      }
+    }
+
+    // ---------- Grafico 2: tutte le province ----------
+    var dotBox = document.getElementById("dotSvg");
+    var tip = Radar.tooltip(dotBox);
+    dotBox.style.position = "relative";
+    Radar.dismissOutside(dotBox, tip.hide);
+
+    function drawDots(width, phase) {
+      var box = d3.select(dotBox); box.select("svg").remove();
+      var narrow = Radar.isNarrow(width);
+      var p = state.price;
+      var m = { t: 58, r: 12, b: p != null ? 64 : 30, l: 12 }, iw = width - m.l - m.r;
+      var lo = d3.min(data, function (d) { return d.avg; }), hi = d3.max(data, function (d) { return d.avg; });
+      if (p != null) { lo = Math.min(lo, p); hi = Math.max(hi, p); }
+      lo = Math.floor((lo - 0.02) * 10) / 10; hi = Math.ceil((hi + 0.02) * 10) / 10;
+      var x = d3.scaleLinear().domain([lo, hi]).range([0, iw]);
+      // beeswarm: ogni punto resta sul suo prezzo (x) e si sposta in verticale solo per non sovrapporsi
+      var r = narrow ? 4.5 : 6;
+      var pts = data.slice().sort(function (a, b) { return a.avg - b.avg || d3.ascending(a.p, b.p); }).map(function (d, i) {
+        return { d: d, x: x(d.avg), y: (i % 2 ? 1 : -1) * 0.5 };
+      });
+      var sim = d3.forceSimulation(pts)
+        .force("x", d3.forceX(function (o) { return x(o.d.avg); }).strength(1))
+        .force("y", d3.forceY(0).strength(0.08))
+        .force("collide", d3.forceCollide(r + 0.8).iterations(4))
+        .stop();
+      for (var k = 0; k < 240; k++) sim.tick();
+      var minY = d3.min(pts, function (o) { return o.y; }) - r, maxY = d3.max(pts, function (o) { return o.y; }) + r;
+      var topPad = 10;
+      pts.forEach(function (o) { o.cx = o.x; o.cy = o.y - minY + topPad; });
+      var mid = -minY + topPad;
+      var ih = (maxY - minY) + topPad + 8;
+      var h = m.t + ih + m.b;
+      var svg = box.insert("svg", ".r-tip").attr("width", width).attr("height", h)
+        .attr("role", "img")
+        .attr("aria-label", "Prezzo medio dell'espresso in " + current.length + " province: da " + eur(cheapest.avg) + " " + ad(cheapest.p) + " a " + eur(dearest.avg) + " " + ad(dearest.p) + ".");
+      var g = svg.append("g").attr("transform", "translate(" + m.l + "," + m.t + ")");
+      var base = ih;
+
+      // asse
+      var ticks = d3.range(Math.round(lo * 10), Math.round(hi * 10) + 1, narrow ? 2 : 1).map(function (t) { return t / 10; });
+      var gr = g.append("g").attr("class", "grid");
+      gr.selectAll("line").data(ticks).join("line")
+        .attr("x1", function (t) { return x(t); }).attr("x2", function (t) { return x(t); })
+        .attr("y1", 0).attr("y2", base + 2);
+      var ax = g.append("g").attr("class", "axis axis--x").attr("transform", "translate(0," + (base + 4) + ")");
+      ax.selectAll("text").data(ticks).join("text").attr("class", "tick-label")
+        .attr("x", function (t) { return x(t); }).attr("y", 16).attr("text-anchor", "middle")
+        .text(function (t, i) { return Radar.fmt(t, 2) + (i === ticks.length - 1 ? " €" : ""); })
+        // le etichette troppo vicine alla tazzina lasciano il posto
+        .style("display", function (t) { return p != null && Math.abs(x(t) - x(p)) < 34 ? "none" : null; });
+      g.append("line").attr("x1", 0).attr("x2", iw).attr("y1", base + 2).attr("y2", base + 2)
+        .style("stroke", "var(--grey-light)").attr("shape-rendering", "crispEdges");
+
+      var selP = state.prov;
+
+      var dots = g.selectAll(".dot").data(pts).join("circle")
+        .attr("class", function (o) { return "dot mark" + (o.d.stale ? " dot--stale" : ""); })
+        .attr("cx", function (o) { return o.cx; })
+        .style("fill", function (o) { return o.d === selP ? "var(--blue)" : o.d.stale ? "var(--bg)" : "var(--grey-4)"; })
+        .style("stroke", function (o) { return o.d.stale ? (o.d === selP ? "var(--blue)" : "var(--grey-3)") : "var(--bg)"; });
+      Radar.enter(dots, phase,
+        function (s) { s.attr("cy", mid).attr("r", 0); },
+        function (s) { s.attr("cy", function (o) { return o.cy; }).attr("r", r); });
+      dots.filter(function (o) { return o.d === selP; }).raise();
+      // il tuo caffè: triangolo sull'asse, tazzina ed etichetta sotto
+      if (p != null) {
+        var px = x(p), cg = g.append("g").attr("class", "you-cup");
+        cg.append("path").attr("d", "M" + px + "," + (base + 3) + "l6,8h-12z").style("fill", "var(--red)");
+        cup(cg.append("g").attr("transform", "translate(" + px + "," + (base + 50) + ") scale(1.45)"), "var(--red)");
+        var right = px + 110 < iw;
+        cg.append("text").attr("class", "series-label").attr("x", px + (right ? 22 : -22)).attr("y", base + 40)
+          .attr("text-anchor", right ? "start" : "end").style("fill", "var(--red)").text("Tu: " + eur(p));
+      }
+
+      // annotazioni: la più economica e la più cara (max due)
+      var annos = [];
+      [cheapest, dearest].forEach(function (d, j) {
+        if (d === selP) return;
+        var o = pts.find(function (q) { return q.d === d; });
+        annos.push({ o: o, t: d.p + " " + eur(d.avg), side: j === 0 ? "start" : "end" });
+      });
+      var ag = g.append("g").attr("class", "anno");
+      annos.forEach(function (a) {
+        var ly = -14;
+        ag.append("line").attr("x1", a.o.cx).attr("x2", a.o.cx).attr("y1", ly + 4).attr("y2", a.o.cy - r - 2);
+        ag.append("text").attr("x", a.o.cx + (a.side === "start" ? -2 : 2)).attr("y", ly)
+          .attr("text-anchor", a.side).text(a.t);
+      });
+
+      // provincia scelta: etichetta diretta
+      if (selP) {
+        var so = pts.find(function (q) { return q.d === selP; });
+        var sx = Math.max(50, Math.min(iw - 50, so.cx));
+        g.append("line").attr("x1", so.cx).attr("x2", so.cx).attr("y1", -30).attr("y2", so.cy - r - 2).style("stroke", "var(--blue)").attr("stroke-width", 0.75);
+        g.append("text").attr("class", "series-label").attr("x", sx).attr("y", -36).attr("text-anchor", "middle")
+          .style("fill", "var(--blue)").text(selP.p + " " + eur(selP.avg));
+      }
+
+      // interazione
+      var hit = g.selectAll(".hit").data(pts).join("circle").attr("class", "hit")
+        .attr("cx", function (o) { return o.cx; }).attr("cy", function (o) { return o.cy; })
+        .attr("r", r + 1.5);
+      function on(ev, o) {
+        dots.classed("is-dimmed", function (q) { return q !== o; });
+        var d = o.d, rows = [["Minimo", eur(d.min)], ["Massimo", eur(d.max)]];
+        if (!d.stale) rows.push(["Posizione", d.rank + "ª più cara su " + current.length]);
+        var pt = d3.pointer(ev, dotBox);
+        tip.show(Radar.tipHTML({ title: d.p, value: eur(d.avg), unit: "media", rows: rows,
+          note: d.stale ? "Ultimo dato disponibile: " + MESI[d.m - 1] + " " + d.a : null }), pt[0], pt[1]);
+      }
+      hit.on("pointerenter", on).on("pointermove", on).on("pointerdown", on)
+        .on("pointerleave", function () { dots.classed("is-dimmed", false); tip.hide(); });
+    }
+
+    // ---------- Aggiornamento ----------
+    function parsePrice(s) {
+      s = String(s).trim().replace("€", "").replace(/\s/g, "").replace(",", ".");
+      if (!/^\d+(\.\d{1,2})?$/.test(s)) return NaN;
+      return parseFloat(s);
+    }
+    function read() {
+      var raw = document.getElementById("price").value, idx = document.getElementById("prov").value;
+      var err = document.getElementById("err");
+      err.textContent = "";
+      state.price = null;
+      if (raw.trim() !== "") {
+        var v = parsePrice(raw);
+        if (isNaN(v) || v < 0.3 || v > 10) err.textContent = "Scrivi un prezzo valido, per esempio 1,20.";
+        else state.price = v;
+      }
+      state.prov = idx === "" ? null : data[+idx];
+      document.getElementById("price").classList.toggle("is-needed", raw.trim() === "");
+      var d = state.prov;
+      document.getElementById("rangeChart").hidden = !d;
+      if (d) {
+        document.getElementById("rangeHead").textContent = "Il prezzo " + ad(d.p);
+        document.getElementById("rangeSub").textContent = d.stale
+          ? "Attenzione: ultimo dato disponibile " + MESI[d.m - 1] + " " + d.a + ", il confronto potrebbe non riflettere i prezzi di oggi."
+          : "Prezzo più basso, più alto e media dei bar rilevati, " + refLabel + (d.rank ? ". " + d.p + " è la " + d.rank + "ª provincia più cara su " + current.length : "") + ".";
+      }
+      document.getElementById("keySel").hidden = !d;
+      if (d) document.getElementById("keySelName").textContent = d.p;
+      document.getElementById("keyYou").hidden = state.price == null;
+    }
+    var lastProv = null;
+    function redraw() {
+      read();
+      // la tazzina scorre solo quando cambia la provincia, non a ogni tasto
+      var phase = state.prov !== lastProv ? "play" : "static";
+      lastProv = state.prov;
+      setBig("static");
+      var w1 = Math.floor(document.getElementById("rangeSvg").getBoundingClientRect().width);
+      var w2 = Math.floor(dotBox.getBoundingClientRect().width);
+      if (w1) drawRange(w1, phase);
+      if (w2) drawDots(w2, "static");
+      Radar.scheduleHeight();
+    }
+
+    Radar.responsive("#dotSvg", function (w, phase) { drawDots(w, phase); });
+    Radar.responsive("#rangeSvg", function (w, phase) { drawRange(w, "static"); });
+    // il numero grande conta fino al valore quando è lui a entrare nello schermo
+    var touched = false;
+    setBig(Radar.reduced ? "static" : "pre");
+    Radar.onFirstView(document.getElementById("big"), function () { if (!touched) setBig("play"); });
+    ["input", "change"].forEach(function (ev) { document.getElementById("form").addEventListener(ev, function () { touched = true; }, true); });
+    document.getElementById("price").addEventListener("input", redraw);
+    document.getElementById("prov").addEventListener("change", redraw);
+    document.getElementById("form").addEventListener("submit", function (e) { e.preventDefault(); redraw(); });
+  }).catch(function (e) { Radar.fail(app, e); });
+})();
+</script>
+</body>
+</html>
