@@ -90,6 +90,7 @@
     <p class="r-chart__head" id="lineHead">Il prezzo medio dal 2021</p>
     <p class="r-chart__sub" id="lineSub"></p>
     <div id="lineSvg"></div>
+    <div class="r-key l-pills" id="lineKey"></div>
   </section>
 
   <section class="r-chart" id="dotChart">
@@ -370,8 +371,10 @@
       document.getElementById("lineChart").hidden = !pv;
       if (!pv) return;
       for (var i = pv.first; i <= pv.last; i++) if (pv[i] == null) gaps = true;
+      d3.select("#lineKey").html('<span><i class="sw sw--l-blue"></i>' + d.p + '</span><span><i class="sw sw--l-grey"></i>Media città</span>');
       document.getElementById("lineHead").textContent = "Il prezzo " + ad(d.p) + " dal 2021";
-      document.getElementById("lineSub").textContent = "Prezzo medio mensile di un espresso al banco " + ad(d.p) + ", in euro." +
+      document.getElementById("lineSub").textContent = "Prezzo medio mensile di un espresso al banco " + ad(d.p) +
+        ", in euro, confrontato con la media di tutte le città rilevate ogni mese." +
         (gaps ? " La linea si interrompe nei mesi senza rilevazione." : "");
     }
 
@@ -381,15 +384,16 @@
       var narrow = Radar.isNarrow(width), d = state.prov;
       var pv = d ? byProv[d.p] : null;
       if (!pv) return;
-      var m = { t: 24, r: narrow ? 14 : 70, b: 28, l: 40 }, h = narrow ? 250 : 290;
+      var m = { t: 24, r: narrow ? 14 : 112, b: 28, l: 40 }, h = narrow ? 250 : 290;
       var iw = width - m.l - m.r, ih = h - m.t - m.b;
       var x = d3.scaleTime().domain(d3.extent(months)).range([0, iw]);
-      var vals = pv.filter(function (v) { return v != null; });
+      var vals = pv.concat(natLine).filter(function (v) { return v != null; });
       var y = d3.scaleLinear().domain([Math.floor((d3.min(vals) - 0.04) * 10) / 10, Math.ceil((d3.max(vals) + 0.04) * 10) / 10]).range([ih, 0]);
       var main = pv;
       var svg = box.insert("svg", ".r-tip").attr("width", width).attr("height", h).attr("role", "img")
         .attr("aria-label", "Prezzo medio dell'espresso " + ad(d.p) + " da " +
-          fmtM(months[main.first]) + " (" + eur(main[main.first]) + ") a " + fmtM(months[main.last]) + " (" + eur(main[main.last]) + ").");
+          fmtM(months[main.first]) + " (" + eur(main[main.first]) + ") a " + fmtM(months[main.last]) + " (" + eur(main[main.last]) + "); media di tutte le città da " +
+          eur(natLine[natLine.first]) + " a " + eur(natLine[natLine.last]) + ".");
       var g = svg.append("g").attr("transform", "translate(" + m.l + "," + m.t + ")");
 
       // griglia orizzontale e valori (niente linea dell'asse Y)
@@ -415,6 +419,7 @@
           function (s) { s.attr("stroke-dashoffset", 0).on("end", function () { d3.select(this).attr("stroke-dasharray", null); }); });
         return path;
       }
+      drawPath(natLine, "var(--grey-4)", 2);
       {
         drawPath(pv, "var(--blue)", 2.5);
         // mesi isolati (senza dato prima e dopo): un punto, altrimenti la linea non li mostra
@@ -435,11 +440,29 @@
       an.append("text").attr("x", x(months[main.first])).attr("y", y(main[main.first]) - 10).attr("text-anchor", "start")
         .text(eur(main[main.first]));
 
-      an.append("text").attr("x", x(months[main.last]) + (narrow ? 0 : 8)).attr("y", y(main[main.last]) + (narrow ? -10 : 4))
-        .attr("text-anchor", narrow ? "end" : "start").text(eur(main[main.last]));
+      if (narrow) {
+        an.append("text").attr("x", x(months[main.last])).attr("y", y(main[main.last]) - 10)
+          .attr("text-anchor", "end").text(eur(main[main.last]));
+      } else {
+        var ends = [
+          { t: d.p, v: pv[pv.last], i: pv.last, c: "var(--blue)" },
+          { t: "Media città", v: natLine[natLine.last], i: natLine.last, c: "var(--ink-2)" }
+        ];
+        var ly = ends.map(function (e) { return y(e.v); });
+        if (Math.abs(ly[0] - ly[1]) < 32) {
+          var mid = (ly[0] + ly[1]) / 2, up = ly[0] <= ly[1] ? -1 : 1;
+          ly[0] = mid + up * 16; ly[1] = mid - up * 16;
+        }
+        ends.forEach(function (e, k) {
+          var tx = g.append("text").attr("class", "series-label").attr("x", x(months[e.i]) + 10).attr("y", ly[k] - 3).style("fill", e.c);
+          tx.append("tspan").text(e.t);
+          tx.append("tspan").attr("x", x(months[e.i]) + 10).attr("dy", "1.2em").style("font-weight", 400).style("fill", "var(--ink-2)").text(eur(e.v));
+        });
+      }
 
       // crosshair e tooltip
       var ch = g.append("line").attr("class", "crosshair").attr("y1", 0).attr("y2", ih).style("opacity", 0);
+      var hn = g.append("circle").attr("r", 3.5).style("fill", "var(--grey-3)").style("stroke", "var(--bg)").attr("stroke-width", 1.5).style("opacity", 0);
       var hp = g.append("circle").attr("r", 4).style("fill", "var(--blue)").style("stroke", "var(--bg)").attr("stroke-width", 1.5).style("opacity", 0);
       var bis = d3.bisector(function (dt) { return dt; }).center;
       function move(ev) {
@@ -451,12 +474,14 @@
         hp.attr("cx", cx).attr("cy", v != null ? y(v) : 0).style("opacity", v != null ? 1 : 0);
         val = v != null ? eur(v) : "n.d.";
         if (v == null) note = "Nessuna rilevazione in questo mese";
+        hn.attr("cx", cx).attr("cy", y(natLine[i])).style("opacity", 1);
+        rows.push(["Media città", eur(natLine[i])]);
         var bp = d3.pointer(ev, lineBox);
         lineTip.show(Radar.tipHTML({ title: fmtM(months[i]), value: val, unit: d.p, rows: rows, note: note }), bp[0], bp[1]);
       }
       g.append("rect").attr("class", "hit").attr("width", iw).attr("height", ih)
         .on("pointermove", move).on("pointerdown", move)
-        .on("pointerleave", function () { ch.style("opacity", 0); hp.style("opacity", 0); lineTip.hide(); });
+        .on("pointerleave", function () { ch.style("opacity", 0); hp.style("opacity", 0); hn.style("opacity", 0); lineTip.hide(); });
     }
 
     Radar.loadCSV("../data/caffe-serie.csv").then(function (rs) {
