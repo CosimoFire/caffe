@@ -46,6 +46,11 @@
   .sw--ring-grey { border-radius: 50%; border: 1.5px solid var(--grey-3); background: var(--bg); }
   .sw--line { width: 10px; height: 8px; border-radius: 0; background: var(--red); clip-path: polygon(50% 0, 100% 100%, 0 100%); }
   @media (max-width: 459px) { .c-form { grid-template-columns: 1fr; } }
+  .l-line { fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .l-pills { display: none; }
+  @media (max-width: 519px) { .l-pills { display: flex; } }
+  .sw--l-blue { background: var(--blue); height: 3px; width: 14px; border-radius: 2px; }
+  .sw--l-grey { background: var(--grey-4); height: 3px; width: 14px; border-radius: 2px; }
 </style>
 </head>
 <body>
@@ -79,6 +84,13 @@
     <div id="rangeSvg"></div>
   </section>
 
+  <section class="r-chart" id="lineChart">
+    <p class="r-chart__head" id="lineHead">Il prezzo medio dal 2021</p>
+    <p class="r-chart__sub" id="lineSub"></p>
+    <div id="lineSvg"></div>
+    <div class="r-key l-pills" id="lineKey"></div>
+  </section>
+
   <section class="r-chart" id="dotChart">
     <p class="r-chart__head">Il prezzo medio nelle province</p>
     <p class="r-chart__sub">Ogni punto è una provincia, posizionato sul prezzo medio di un espresso al banco. Passa sopra un punto per i dettagli.</p>
@@ -86,7 +98,6 @@
     <div class="r-key" id="dotKey">
       <span><i class="sw sw--grey"></i>Provincia</span>
       <span id="keySel" hidden><i class="sw sw--sel"></i><b id="keySelName"></b></span>
-      <span id="keyYou" hidden><i class="sw sw--line"></i>Il tuo caffè</span>
       <span><i class="sw sw--ring-grey"></i>Dato non aggiornato</span>
     </div>
     <p class="r-note" id="note"></p>
@@ -240,7 +251,7 @@
     function drawDots(width, phase) {
       var box = d3.select(dotBox); box.select("svg").remove();
       var narrow = Radar.isNarrow(width);
-      var p = state.price;
+      var p = null; // il tuo caffè non compare in questo grafico
       var m = { t: 58, r: 12, b: p != null ? 64 : 30, l: 12 }, iw = width - m.l - m.r;
       var lo = d3.min(data, function (d) { return d.avg; }), hi = d3.max(data, function (d) { return d.avg; });
       if (p != null) { lo = Math.min(lo, p); hi = Math.max(hi, p); }
@@ -345,6 +356,157 @@
         .on("pointerleave", function () { dots.classed("is-dimmed", false); tip.hide(); });
     }
 
+    // ---------- Grafico a linea: il prezzo dal 2021 ----------
+    var serie = null, months = [], natLine = [], natCount = [], byProv = {};
+    var lineBox = document.getElementById("lineSvg");
+    var lineTip = Radar.tooltip(lineBox);
+    lineBox.style.position = "relative";
+    Radar.dismissOutside(lineBox, lineTip.hide);
+    var fmtM = function (dt) { return MESI[dt.getMonth()] + " " + dt.getFullYear(); };
+
+    function setLineText() {
+      var d = state.prov, pv = d ? byProv[d.p] : null, gaps = false;
+      if (pv) for (var i = pv.first; i <= pv.last; i++) if (pv[i] == null) gaps = true;
+      document.getElementById("lineHead").textContent = d ? "Il prezzo " + ad(d.p) + " dal 2021" : "Il prezzo medio dal 2021";
+      document.getElementById("lineSub").textContent = (d
+        ? "Prezzo medio mensile di un espresso al banco " + ad(d.p) + ", in euro, confrontato con la media delle province rilevate ogni mese."
+        : "Media mensile delle province rilevate ogni mese (tra " + d3.min(natCount) + " e " + d3.max(natCount) + "), in euro. Scegli una provincia per vedere il suo andamento.") +
+        (gaps ? " La linea si interrompe nei mesi senza rilevazione." : "");
+      var key = d3.select("#lineKey").html("");
+      if (d) key.append("span").html('<i class="sw sw--l-blue"></i>' + d.p);
+      key.append("span").html('<i class="sw ' + (d ? "sw--l-grey" : "sw--l-blue") + '"></i>Media province');
+    }
+
+    function drawLine(width, phase) {
+      if (!serie) return;
+      var box = d3.select(lineBox); box.select("svg").remove();
+      var narrow = Radar.isNarrow(width), d = state.prov;
+      var pv = d ? byProv[d.p] : null;
+      var m = { t: 24, r: narrow ? 14 : 118, b: 28, l: 40 }, h = narrow ? 250 : 290;
+      var iw = width - m.l - m.r, ih = h - m.t - m.b;
+      var x = d3.scaleTime().domain(d3.extent(months)).range([0, iw]);
+      var vals = natLine.filter(function (v) { return v != null; }).concat(pv ? pv.filter(function (v) { return v != null; }) : []);
+      var y = d3.scaleLinear().domain([Math.floor((d3.min(vals) - 0.04) * 10) / 10, Math.ceil((d3.max(vals) + 0.04) * 10) / 10]).range([ih, 0]);
+      var main = pv || natLine;
+      var svg = box.insert("svg", ".r-tip").attr("width", width).attr("height", h).attr("role", "img")
+        .attr("aria-label", (d ? "Prezzo medio dell'espresso " + ad(d.p) : "Prezzo medio dell'espresso nelle province") + " da " +
+          fmtM(months[main.first]) + " (" + eur(main[main.first]) + ") a " + fmtM(months[main.last]) + " (" + eur(main[main.last]) + ").");
+      var g = svg.append("g").attr("transform", "translate(" + m.l + "," + m.t + ")");
+
+      // griglia orizzontale e valori (niente linea dell'asse Y)
+      var yt = d3.range(Math.round(y.domain()[0] * 10), Math.round(y.domain()[1] * 10) + 1, narrow ? 2 : 1).map(function (v) { return v / 10; });
+      g.append("g").attr("class", "grid").selectAll("line").data(yt).join("line")
+        .attr("x1", 0).attr("x2", iw).attr("y1", function (v) { return y(v); }).attr("y2", function (v) { return y(v); });
+      g.selectAll(".ytl").data(yt).join("text").attr("class", "tick-label ytl").attr("x", -8).attr("y", function (v) { return y(v); })
+        .attr("dy", "0.32em").attr("text-anchor", "end").text(function (v, i) { return Radar.fmt(v, 2) + (i === yt.length - 1 ? " €" : ""); });
+      var years = d3.timeYear.range(months[0], d3.timeMonth.offset(months[months.length - 1], 1));
+      g.selectAll(".xtl").data(years).join("text").attr("class", "tick-label xtl").attr("x", function (dt) { return x(dt); }).attr("y", ih + 20)
+        .attr("text-anchor", function (dt, i) { return i === 0 ? "start" : "middle"; })
+        .text(function (dt) { return narrow ? "’" + String(dt.getFullYear()).slice(2) : dt.getFullYear(); });
+      g.append("line").attr("class", "baseline").attr("x1", 0).attr("x2", iw).attr("y1", ih).attr("y2", ih).style("stroke", "var(--grey-light)");
+
+      var line = d3.line().defined(function (v) { return v != null; })
+        .x(function (v, i) { return x(months[i]); }).y(function (v) { return y(v); }).curve(d3.curveMonotoneX);
+      function drawPath(arr, color, width) {
+        var path = g.append("path").attr("class", "l-line").attr("d", line(arr)).style("stroke", color).attr("stroke-width", width);
+        if (phase === "static") return path;
+        var len = path.node().getTotalLength();
+        Radar.enter(path, phase,
+          function (s) { s.attr("stroke-dasharray", len + " " + len).attr("stroke-dashoffset", len); },
+          function (s) { s.attr("stroke-dashoffset", 0).on("end", function () { d3.select(this).attr("stroke-dasharray", null); }); });
+        return path;
+      }
+      drawPath(natLine, d ? "var(--grey-4)" : "var(--blue)", d ? 2 : 2.5);
+      if (pv) {
+        drawPath(pv, "var(--blue)", 2.5);
+        // mesi isolati (senza dato prima e dopo): un punto, altrimenti la linea non li mostra
+        var iso = pv.map(function (v, i) { return v != null && pv[i - 1] == null && pv[i + 1] == null ? i : -1; })
+          .filter(function (i) { return i >= 0; });
+        g.selectAll(".iso").data(iso).join("circle").attr("class", "iso")
+          .attr("cx", function (i) { return x(months[i]); }).attr("cy", function (i) { return y(pv[i]); }).attr("r", 2.2)
+          .style("fill", "var(--blue)");
+      }
+
+      // pallini e valori di partenza e di arrivo della serie principale
+      var dots = g.append("g");
+      [main.first, main.last].forEach(function (i) {
+        dots.append("circle").attr("cx", x(months[i])).attr("cy", y(main[i])).attr("r", 3.5)
+          .style("fill", "var(--blue)").style("stroke", "var(--bg)").attr("stroke-width", 1.5);
+      });
+      var an = g.append("g").attr("class", "anno");
+      an.append("text").attr("x", x(months[main.first])).attr("y", y(main[main.first]) - 10).attr("text-anchor", "start")
+        .text(eur(main[main.first]));
+
+      if (!narrow) {
+        // etichette dirette a destra
+        var ends = [];
+        if (pv) ends.push({ t: d.p, v: pv[pv.last], i: pv.last, c: "var(--blue)" });
+        ends.push({ t: "Media province", v: natLine[natLine.last], i: natLine.last, c: d ? "var(--ink-2)" : "var(--blue)" });
+        var ly = ends.map(function (e) { return y(e.v); });
+        if (ly.length === 2 && Math.abs(ly[0] - ly[1]) < 32) {
+          var mid = (ly[0] + ly[1]) / 2, up = ly[0] <= ly[1] ? -1 : 1;
+          ly[0] = mid + up * 16; ly[1] = mid - up * 16;
+        }
+        ends.forEach(function (e, k) {
+          var tx = g.append("text").attr("class", "series-label").attr("x", x(months[e.i]) + 10).attr("y", ly[k] - 3).style("fill", e.c);
+          tx.append("tspan").text(e.t);
+          tx.append("tspan").attr("x", x(months[e.i]) + 10).attr("dy", "1.2em").style("font-weight", 400).style("fill", "var(--ink-2)").text(eur(e.v));
+        });
+      } else {
+        an.append("text").attr("x", x(months[main.last])).attr("y", y(main[main.last]) - 10).attr("text-anchor", "end").text(eur(main[main.last]));
+      }
+
+      // crosshair e tooltip
+      var ch = g.append("line").attr("class", "crosshair").attr("y1", 0).attr("y2", ih).style("opacity", 0);
+      var hn = g.append("circle").attr("r", 3.5).style("fill", d ? "var(--grey-3)" : "var(--blue)").style("stroke", "var(--bg)").attr("stroke-width", 1.5).style("opacity", 0);
+      var hp = g.append("circle").attr("r", 4).style("fill", "var(--blue)").style("stroke", "var(--bg)").attr("stroke-width", 1.5).style("opacity", 0);
+      var bis = d3.bisector(function (dt) { return dt; }).center;
+      function move(ev) {
+        var pt = d3.pointer(ev, g.node()), i = bis(months, x.invert(pt[0]));
+        i = Math.max(0, Math.min(months.length - 1, i));
+        var cx = x(months[i]), rows = [], val, note = null;
+        ch.attr("x1", cx).attr("x2", cx).style("opacity", 1);
+        hn.attr("cx", cx).attr("cy", y(natLine[i])).style("opacity", 1);
+        if (pv) {
+          var v = pv[i];
+          hp.attr("cx", cx).attr("cy", v != null ? y(v) : 0).style("opacity", v != null ? 1 : 0);
+          val = v != null ? eur(v) : "n.d.";
+          if (v == null) note = "Nessuna rilevazione in questo mese";
+          rows.push(["Media province", eur(natLine[i])]);
+        } else {
+          val = eur(natLine[i]);
+          rows.push(["Province rilevate", String(natCount[i])]);
+        }
+        var bp = d3.pointer(ev, lineBox);
+        lineTip.show(Radar.tipHTML({ title: fmtM(months[i]), value: val, unit: d ? d.p : "media province", rows: rows, note: note }), bp[0], bp[1]);
+      }
+      g.append("rect").attr("class", "hit").attr("width", iw).attr("height", ih)
+        .on("pointermove", move).on("pointerdown", move)
+        .on("pointerleave", function () { ch.style("opacity", 0); hp.style("opacity", 0); hn.style("opacity", 0); lineTip.hide(); });
+    }
+
+    Radar.loadCSV("../data/caffe-serie.csv").then(function (rs) {
+      var keyOf = function (a, mm) { return a * 12 + (mm - 1); };
+      var k0 = d3.min(rs, function (r) { return keyOf(+r.anno, +r.mese); }), k1 = d3.max(rs, function (r) { return keyOf(+r.anno, +r.mese); });
+      for (var k = k0; k <= k1; k++) months.push(new Date(Math.floor(k / 12), k % 12, 1));
+      var sum = months.map(function () { return 0; });
+      natCount = months.map(function () { return 0; });
+      rs.forEach(function (r) {
+        var i = keyOf(+r.anno, +r.mese) - k0, v = Radar.num(r.media);
+        if (v == null) return;
+        if (!byProv[r.provincia]) byProv[r.provincia] = months.map(function () { return null; });
+        byProv[r.provincia][i] = v; sum[i] += v; natCount[i]++;
+      });
+      natLine = sum.map(function (s, i) { return natCount[i] ? s / natCount[i] : null; });
+      [natLine].concat(Object.values(byProv)).forEach(function (arr) {
+        arr.first = arr.findIndex(function (v) { return v != null; });
+        for (var j = arr.length - 1; j >= 0; j--) if (arr[j] != null) { arr.last = j; break; }
+      });
+      serie = rs;
+      setLineText();
+      Radar.responsive("#lineSvg", drawLine);
+    }).catch(function (e) { Radar.fail(lineBox, e); });
+
     // ---------- Aggiornamento ----------
     function parsePrice(s) {
       s = String(s).trim().replace("€", "").replace(/\s/g, "").replace(",", ".");
@@ -373,9 +535,8 @@
       }
       document.getElementById("keySel").hidden = !d;
       if (d) document.getElementById("keySelName").textContent = d.p;
-      document.getElementById("keyYou").hidden = state.price == null;
     }
-    var lastProv = null;
+    var lastProv = null, lastLineProv = null;
     function redraw() {
       read();
       // la tazzina scorre solo quando cambia la provincia, non a ogni tasto
@@ -386,6 +547,12 @@
       var w2 = Math.floor(dotBox.getBoundingClientRect().width);
       if (w1) drawRange(w1, phase);
       if (w2) drawDots(w2, "static");
+      if (serie) {
+        setLineText();
+        var w3 = Math.floor(lineBox.getBoundingClientRect().width);
+        if (w3) drawLine(w3, state.prov !== lastLineProv ? "play" : "static");
+        lastLineProv = state.prov;
+      }
       Radar.scheduleHeight();
     }
 
