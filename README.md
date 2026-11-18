@@ -6,7 +6,11 @@
 
 **Fonte:** Osservatorio prezzi del ministero delle Imprese e del Made in Italy, voce "Caffè espresso al bar (1 pz)".
 
-**Dati:** `data/caffe-serie.csv` contiene la serie mensile del prezzo medio per provincia da gennaio 2021 (usata dal grafico a linea; la media delle province è la media semplice di quelle rilevate in ciascun mese, tra 51 e 63). `data/caffe-province.csv` contiene, per ognuna delle 64 province rilevate, l'ultimo mese disponibile con prezzo minimo, massimo e medio (separatore `;`, virgola decimale). Il mese di riferimento della pagina è il più recente presente nel file; le province con un dato più vecchio sono segnate come "dato non aggiornato" (punto vuoto). Per aggiornare la dataviz basta sostituire il CSV.
+**Dati:** `data/caffe-serie.csv` contiene la serie mensile del prezzo medio per provincia da gennaio 2021 (usata dal grafico a linea, che mostra la provincia scelta). `data/caffe-province.csv` contiene, per ognuna delle 64 province rilevate, l'ultimo mese disponibile con prezzo minimo, massimo e medio (separatore `;`, virgola decimale). Il mese di riferimento della pagina è il più recente presente nel file; le province con un dato più vecchio sono segnate come "dato non aggiornato" (punto vuoto). Per aggiornare la dataviz basta sostituire il CSV.
+
+## Sfondo e logo
+
+Con la skill radar-dataviz V02_1 la pagina riconosce da sola i quattro sfondi QN (grigio, bianco, nero, notte) e sceglie il tema di conseguenza; il logo QN compare in alto a destra. Per le anteprime senza CMS: `?bg=grigio`, `?bg=bianco`, `?bg=nero`, `?bg=notte`.
 
 ## Snippet per il CMS
 
